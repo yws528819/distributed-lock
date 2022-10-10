@@ -1,8 +1,14 @@
 package com.yws.com.yws.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class StockService {
@@ -11,17 +17,41 @@ public class StockService {
     private StringRedisTemplate redisTemplate;
 
     public void deduct() {
-        //1.查询库存信息
-        String stock = redisTemplate.opsForValue().get("stock");
 
-        //2.判断库存是否充足
-        if (stock != null && stock.length() > 0) {
-            Integer st = Integer.valueOf(stock);
-            if (st > 0) {
-                //3.扣减库存
-                redisTemplate.opsForValue().set("stock", String.valueOf(--st));
+        redisTemplate.execute(new SessionCallback<Object>() {
+            @Override
+            public Object execute(RedisOperations operations) throws DataAccessException {
+                //watch
+                operations.watch("stock");
+
+                //1.查询库存信息
+                String stock = redisTemplate.opsForValue().get("stock");
+
+                //2.判断库存是否充足
+                if (stock != null && stock.length() > 0) {
+                    Integer st = Integer.valueOf(stock);
+                    if (st > 0) {
+                        //multi
+                        operations.multi();
+                        //3.扣减库存
+                        redisTemplate.opsForValue().set("stock", String.valueOf(--st));
+                    }
+                }
+                //exec 执行事务
+                List exec = operations.exec();
+                //如果执行事务的返回结果为空，则代表扣减库存失败，重试
+                if (exec == null || exec.size() == 0) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(40);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    deduct();
+                }
+
+                return exec;
             }
-        }
+        });
     }
 
 }
