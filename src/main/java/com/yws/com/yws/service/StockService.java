@@ -1,6 +1,7 @@
 package com.yws.com.yws.service;
 
-import org.apache.commons.lang3.StringUtils;
+import com.yws.com.yws.lock.DistributedLockClient;
+import com.yws.com.yws.lock.DistributedRedisLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisOperations;
@@ -20,7 +21,44 @@ public class StockService {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private DistributedLockClient lockClient;
+
+
     public void deduct() {
+        DistributedRedisLock redisLock = lockClient.getRedisLock("lock");
+        redisLock.lock();
+
+        //1.查询库存信息
+        String stock = redisTemplate.opsForValue().get("stock");
+
+        try {
+            //2.判断库存是否充足
+            if (stock != null && stock.length() > 0) {
+                Integer st = Integer.valueOf(stock);
+                if (st > 0) {
+                    //3.扣减库存
+                    redisTemplate.opsForValue().set("stock", String.valueOf(--st));
+                }
+            }
+
+            test();
+
+        } finally {
+            redisLock.unlock();
+        }
+    }
+
+
+    public void test() {
+        DistributedRedisLock lock = lockClient.getRedisLock("lock");
+        lock.lock();
+        System.out.println("测试可重入锁。。。");
+        lock.unlock();
+    }
+
+
+    public void deduct2() {
         String uuid = UUID.randomUUID().toString();
         //尝试加锁，不存在才加锁
         while (!redisTemplate.opsForValue().setIfAbsent("lock", uuid, 3, TimeUnit.SECONDS)) {
@@ -47,18 +85,17 @@ public class StockService {
         } finally {
             //先判断是否是自己的锁，再解锁（使用lua脚本）
             String script = "if redis.call('get', KEYS[1]) == ARGV[1] " +
-                            "then " +
-                            "   redis.call('del', KEYS[1]) " +
-                            "else " +
-                            "   return 0 " +
-                            "end";
+                    "then " +
+                    "   redis.call('del', KEYS[1]) " +
+                    "else " +
+                    "   return 0 " +
+                    "end";
             redisTemplate.execute(new DefaultRedisScript<>(script, Boolean.class), Arrays.asList("lock"), uuid);
             //if (StringUtils.equals(redisTemplate.opsForValue().get("lock"), uuid)) {
             //    redisTemplate.delete("lock");
             //}
         }
     }
-
 
 
     /**
