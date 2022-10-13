@@ -42,7 +42,14 @@ public class StockService {
                 }
             }
 
-            test();
+            //测试可重入
+            //test();
+            //测试自动续期
+            //try {
+            //    TimeUnit.SECONDS.sleep(40);
+            //} catch (InterruptedException e) {
+            //    throw new RuntimeException(e);
+            //}
 
         } finally {
             redisLock.unlock();

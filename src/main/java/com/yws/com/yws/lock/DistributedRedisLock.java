@@ -4,6 +4,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import java.util.Arrays;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -18,7 +20,7 @@ public class DistributedRedisLock implements Lock {
     public DistributedRedisLock(StringRedisTemplate redisTemplate, String lockName, String uuid) {
         this.redisTemplate = redisTemplate;
         this.lockName = lockName;
-        this.uuid = uuid;
+        this.uuid = uuid + ":" + Thread.currentThread().getId();
     }
 
     @Override
@@ -53,18 +55,15 @@ public class DistributedRedisLock implements Lock {
                 "else " +
                 "   return 0 " +
                 "end";
-        while(!redisTemplate.execute(new DefaultRedisScript<>(script, Boolean.class), Arrays.asList(lockName), getId(), String.valueOf(expire))) {
+        while(!redisTemplate.execute(new DefaultRedisScript<>(script, Boolean.class), Arrays.asList(lockName), uuid, String.valueOf(expire))) {
             TimeUnit.MILLISECONDS.sleep(50);
         }
+
+        //加锁成功，返回之前，开启定时器自动续期
+        renewExpire();
         return true;
     }
 
-    /**
-     * 给线程拼接唯一标识
-     */
-    private String getId() {
-        return uuid + ":" + Thread.currentThread().getId();
-    }
 
     @Override
     public void unlock() {
@@ -77,7 +76,7 @@ public class DistributedRedisLock implements Lock {
                 "else " +
                 "   return 0 " +
                 "end";
-        Long flag = redisTemplate.execute(new DefaultRedisScript<>(script, Long.class), Arrays.asList(lockName), getId());
+        Long flag = redisTemplate.execute(new DefaultRedisScript<>(script, Long.class), Arrays.asList(lockName), uuid);
         if (flag == null) {
             throw new IllegalMonitorStateException("this lock doesn't belong to you!");
         }
@@ -86,5 +85,21 @@ public class DistributedRedisLock implements Lock {
     @Override
     public Condition newCondition() {
         return null;
+    }
+
+
+    /**
+     * 自动续期，使用定时任务延期重复执行
+     */
+    private void renewExpire() {
+        String script = "if redis.call('hexists', KEYS[1], ARGV[1]) == 1 then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end";
+        new Timer().schedule(new TimerTask() {
+            @Override
+            public void run() {
+                if (redisTemplate.execute(new DefaultRedisScript<>(script, Boolean.class), Arrays.asList(lockName), uuid, String.valueOf(expire))) {
+                    renewExpire();
+                }
+            }
+        }, expire * 1000 / 3);
     }
 }
