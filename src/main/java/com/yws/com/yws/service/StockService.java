@@ -3,6 +3,7 @@ package com.yws.com.yws.service;
 import com.yws.com.yws.lock.DistributedLockClient;
 import com.yws.com.yws.lock.DistributedRedisLock;
 import org.redisson.api.RLock;
+import org.redisson.api.RReadWriteLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -174,4 +175,32 @@ public class StockService {
         });
     }
 
+    public void fairyLock(String id) {
+        RLock fairylock = redisClient.getFairLock("fairylock");
+        fairylock.lock();
+        try{
+            TimeUnit.SECONDS.sleep(10);
+            System.out.println("测试公平锁=============" + id);
+        }catch (Exception e){
+            e.printStackTrace();
+        }finally {
+            fairylock.unlock();
+        }
+    }
+
+    public void readLock() {
+        RReadWriteLock rwLock = redisClient.getReadWriteLock("rwLock");
+        RLock rLock = rwLock.readLock();
+        rLock.lock(10, TimeUnit.SECONDS);
+        // TODO: 一顿读操作
+        //rLock.unlock();
+    }
+
+    public void writeLock() {
+        RReadWriteLock rwLock = redisClient.getReadWriteLock("rwLock");
+        RLock writeLock = rwLock.writeLock();
+        writeLock.lock(10, TimeUnit.SECONDS);
+        // TODO: 一顿写操作
+        //writeLock.unlock();
+    }
 }
