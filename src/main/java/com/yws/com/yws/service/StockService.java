@@ -4,6 +4,7 @@ import com.yws.com.yws.lock.DistributedLockClient;
 import com.yws.com.yws.lock.DistributedRedisLock;
 import org.redisson.api.RLock;
 import org.redisson.api.RReadWriteLock;
+import org.redisson.api.RSemaphore;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -15,7 +16,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -202,5 +206,61 @@ public class StockService {
         writeLock.lock(10, TimeUnit.SECONDS);
         // TODO: 一顿写操作
         //writeLock.unlock();
+    }
+
+
+    public static void main(String[] args) throws InterruptedException {
+        CountDownLatch countDownLatch = new CountDownLatch(6);
+
+        for (int i = 0; i < 6; i++) {
+            new Thread(() -> {
+                System.out.println(Thread.currentThread().getName() + "准备出门了。。。");
+                try {
+                    TimeUnit.SECONDS.sleep(new Random().nextInt(5));
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                System.out.println(Thread.currentThread().getName() + "出门了。。。。。。");
+                countDownLatch.countDown();
+            }, i + "号同学").start();
+        }
+
+        countDownLatch.await();
+        System.out.println(Thread.currentThread().getName() + "班长锁门");
+    }
+
+    private static void jucSemaphoreTest() {
+        Semaphore semaphore = new Semaphore(3);
+
+        for (int i = 0; i < 6; i++) {
+            new Thread(() -> {
+                try {
+                    semaphore.acquire();
+                    System.out.println(Thread.currentThread().getName() + "抢到了停车位");
+                    TimeUnit.SECONDS.sleep(new Random().nextInt(10));
+                    System.out.println(Thread.currentThread().getName() + "停了一会开走了！");
+                    semaphore.release();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+
+            }, i + "号车").start();
+
+        }
+    }
+
+    public void semaphore() {
+        RSemaphore semaphore = redisClient.getSemaphore("semaphore");
+        semaphore.trySetPermits(3);//设置资源量 限流的线程数
+
+        try {
+            semaphore.acquire();//获取资源，获取资源成功的线程可以继续处理业务操作。否则会被阻塞
+            redisTemplate.opsForList().rightPush("log", "10086获取了资源，开始业务逻辑处理。" + Thread.currentThread().getName());
+            TimeUnit.SECONDS.sleep(10 + new Random().nextInt(10));
+            redisTemplate.opsForList().rightPush("log", "10086处理完业务逻辑，资源释放===========" + Thread.currentThread().getName());
+            semaphore.release();//手动释放资源，后续请求线程就可以获取该资源
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

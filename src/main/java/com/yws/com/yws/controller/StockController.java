@@ -37,4 +37,10 @@ public class StockController {
         return "hello test write lock";
     }
 
+    @GetMapping("/semaphore")
+    public String semaphore() {
+        stockService.semaphore();
+        return "hello test semaphore";
+    }
+
 }
