@@ -43,4 +43,15 @@ public class StockController {
         return "hello test semaphore";
     }
 
+    @GetMapping("/latch")
+    public String latch() {
+        stockService.latch();
+        return "班长锁门了";
+    }
+
+    @GetMapping("/countdown")
+    public String countDown() {
+        stockService.coutDown();
+        return "出来了一位同学";
+    }
 }

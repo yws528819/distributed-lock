@@ -2,10 +2,7 @@ package com.yws.com.yws.service;
 
 import com.yws.com.yws.lock.DistributedLockClient;
 import com.yws.com.yws.lock.DistributedRedisLock;
-import org.redisson.api.RLock;
-import org.redisson.api.RReadWriteLock;
-import org.redisson.api.RSemaphore;
-import org.redisson.api.RedissonClient;
+import org.redisson.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisOperations;
@@ -262,5 +259,24 @@ public class StockService {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public void latch() {
+        RCountDownLatch cdl = redisClient.getCountDownLatch("cdl");
+        cdl.trySetCount(5);
+
+        try {
+            cdl.await();
+            // TODO: 一顿操作准备锁门
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void coutDown() {
+        RCountDownLatch cdl = redisClient.getCountDownLatch("cdl");
+        // TODO: 一顿操作出门
+        cdl.countDown();
+
     }
 }
