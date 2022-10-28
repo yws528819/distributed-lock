@@ -22,6 +22,7 @@ public class ZKTest {
                     }else if (Event.KeeperState.Closed == state) {
                         System.out.println("关闭链接。。。");
                     }else {
+                        //如果exist、getData、getChildren对应的boolean watch设为true，就会走这里，也是一次性的，每个方法一次
                         //节点事件一般不写这里
                         // System.out.println("节点事件。。。");
                     }
