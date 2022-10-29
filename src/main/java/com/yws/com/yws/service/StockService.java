@@ -4,6 +4,8 @@ import com.yws.com.yws.lock.DistributedLockClient;
 import com.yws.com.yws.lock.DistributedRedisLock;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.locks.InterProcessMutex;
+import com.yws.com.yws.lock.zk.ZkClient;
+import com.yws.com.yws.lock.zk.ZkDistributedLock;
 import org.redisson.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -36,15 +38,22 @@ public class StockService {
     @Autowired
     private CuratorFramework curatorFramework;
 
+    @Autowired
+    private ZkClient zkClient;
 
+
+    /**
+     * zookeeper锁（自旋锁）
+     */
     public void deduct() {
-        InterProcessMutex mutex = new InterProcessMutex(curatorFramework, "/curator/locks");
+
+        ZkDistributedLock zkLock = zkClient.getLock("lock");
+        zkLock.lock();
+
+        //1.查询库存信息
+        String stock = redisTemplate.opsForValue().get("stock");
+
         try {
-            mutex.acquire();
-
-            //1.查询库存信息
-            String stock = redisTemplate.opsForValue().get("stock");
-
             //2.判断库存是否充足
             if (stock != null && stock.length() > 0) {
                 Integer st = Integer.valueOf(stock);
@@ -53,20 +62,14 @@ public class StockService {
                     redisTemplate.opsForValue().set("stock", String.valueOf(--st));
                 }
             }
-
-            //测试可重入
-            test(mutex);
-        }catch (Exception e) {
-            throw new RuntimeException(e);
-        }finally {
-            try {
-                mutex.release();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+        } finally {
+            zkLock.unlock();
         }
     }
 
+    /**
+     * redisson锁
+     */
     public void deduct4() {
 
         RLock rLock = redisClient.getLock("lock");
@@ -90,6 +93,9 @@ public class StockService {
     }
 
 
+    /**
+     * redis锁（自己实现）
+     */
     public void deduct3() {
         DistributedRedisLock redisLock = lockClient.getRedisLock("lock");
         redisLock.lock();
