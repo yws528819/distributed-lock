@@ -1,19 +1,24 @@
 package com.yws.com.yws.lock.zk;
 
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.ZooKeeper;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.zookeeper.*;
+import org.springframework.util.CollectionUtils;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
+import java.util.stream.Collectors;
 
 public class ZkDistributedLock implements Lock {
 
     private ZooKeeper zooKeeper;
     private String lockName;
     private static final String ROOT_PATH = "/locks";
+
+    private String currentNodePath;
 
     public ZkDistributedLock(ZooKeeper zooKeeper, String lockName) {
         this.zooKeeper = zooKeeper;
@@ -43,7 +48,23 @@ public class ZkDistributedLock implements Lock {
     public boolean tryLock() {
         try {
             //创建zNode节点过程：为了防止zk客户端程序获取到锁之后，服务器宕机带来的死锁问题，这里创建的是临时节点
-            zooKeeper.create(ROOT_PATH + "/" +  lockName, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+            //所有请求都要求获取锁时，给每一个请求创建临时序列化节点
+            currentNodePath = zooKeeper.create(ROOT_PATH + "/" + lockName + "-", null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
+            //获取前置节点，如果前置节点为空，则获取锁成功，否则监听前置节点
+            String preNode = getPreNode();
+            if (preNode != null) {
+                CountDownLatch countDownLatch = new CountDownLatch(1);
+                //因为获取前置节点这个操作，不具备原子性，再次判断zk中的前置节点是否存在
+                if (zooKeeper.exists(ROOT_PATH + "/" + preNode, new Watcher() {
+                    @Override
+                    public void process(WatchedEvent event) {
+                        countDownLatch.countDown();
+                    }
+                }) == null ) {
+                    return true;
+                }
+                countDownLatch.await();
+            }
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -57,6 +78,36 @@ public class ZkDistributedLock implements Lock {
         return false;
     }
 
+    private String getPreNode() {
+        try{
+            //获取根结点下的所有子节点
+            List<String> children = zooKeeper.getChildren(ROOT_PATH, false);
+            if (CollectionUtils.isEmpty(children)) {
+                throw new IllegalMonitorStateException("非法操作");
+            }
+            //获取当前节点同一资源的锁
+            List<String> nodes = children.stream().filter(node -> StringUtils.startsWith(node, lockName + "-")).collect(Collectors.toList());
+            if (CollectionUtils.isEmpty(nodes)) {
+                throw new IllegalMonitorStateException("非法操作");
+            }
+            //排好序
+            Collections.sort(nodes);
+
+            //获取当前节点的下标
+            String currentNode = StringUtils.substringAfterLast(currentNodePath, "/");
+            int index = Collections.binarySearch(nodes, currentNode);
+            if (index < 0) {
+                throw new IllegalMonitorStateException("非法操作");
+            }else if (index > 0) {
+                return nodes.get(index -1);//返回前置节点
+            }
+            //如果当前节点就是第一个节点，则返回null
+            return null;
+        }catch (Exception e) {
+            throw new IllegalMonitorStateException("非法操作");
+        }
+    }
+
     @Override
     public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
         return false;
@@ -65,7 +116,7 @@ public class ZkDistributedLock implements Lock {
     @Override
     public void unlock() {
         try {
-            zooKeeper.delete(ROOT_PATH + "/" + lockName, -1);
+            zooKeeper.delete(currentNodePath, -1);
         } catch (Exception e) {
             e.printStackTrace();
         }
