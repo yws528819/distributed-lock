@@ -42,10 +42,40 @@ public class StockService {
     private ZkClient zkClient;
 
 
+    public void deduct() {
+        InterProcessMutex mutex = new InterProcessMutex(curatorFramework, "/curator/locks");
+        try {
+            mutex.acquire();
+
+            //1.查询库存信息
+            String stock = redisTemplate.opsForValue().get("stock");
+
+            //2.判断库存是否充足
+            if (stock != null && stock.length() > 0) {
+                Integer st = Integer.valueOf(stock);
+                if (st > 0) {
+                    //3.扣减库存
+                    redisTemplate.opsForValue().set("stock", String.valueOf(--st));
+                }
+            }
+
+            //测试可重入
+            test(mutex);
+        }catch (Exception e) {
+            throw new RuntimeException(e);
+        }finally {
+            try {
+                mutex.release();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
     /**
      * zookeeper锁（自旋锁）
      */
-    public void deduct() {
+    public void deduct5() {
 
         ZkDistributedLock zkLock = zkClient.getLock("lock");
         zkLock.lock();
@@ -62,6 +92,9 @@ public class StockService {
                     redisTemplate.opsForValue().set("stock", String.valueOf(--st));
                 }
             }
+
+            test2();
+
         } finally {
             zkLock.unlock();
         }
@@ -132,6 +165,13 @@ public class StockService {
         mutex.acquire();
         System.out.println("测试curator可重入锁。。。");
         mutex.release();
+    }
+
+    public void test1() {
+        ZkDistributedLock lock = zkClient.getLock("lock");
+        lock.lock();
+        System.out.println("测试zookeeper可重入锁。。。");
+        lock.unlock();
     }
 
     public void test2() {

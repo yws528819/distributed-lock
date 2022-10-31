@@ -20,6 +20,9 @@ public class ZkDistributedLock implements Lock {
 
     private String currentNodePath;
 
+
+    private static final ThreadLocal<Integer> THREAD_LOCAL = new ThreadLocal<>();
+
     public ZkDistributedLock(ZooKeeper zooKeeper, String lockName) {
         this.zooKeeper = zooKeeper;
         this.lockName = lockName;
@@ -47,6 +50,13 @@ public class ZkDistributedLock implements Lock {
     @Override
     public boolean tryLock() {
         try {
+            //判断threadlocal中是否已经有锁，有锁直接重入（+1）
+            Integer flag = THREAD_LOCAL.get();
+            if (flag != null && flag > 0) {
+                THREAD_LOCAL.set(flag + 1);
+                return true;
+            }
+
             //创建zNode节点过程：为了防止zk客户端程序获取到锁之后，服务器宕机带来的死锁问题，这里创建的是临时节点
             //所有请求都要求获取锁时，给每一个请求创建临时序列化节点
             currentNodePath = zooKeeper.create(ROOT_PATH + "/" + lockName + "-", null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
@@ -61,10 +71,12 @@ public class ZkDistributedLock implements Lock {
                         countDownLatch.countDown();
                     }
                 }) == null ) {
+                    THREAD_LOCAL.set(1);
                     return true;
                 }
                 countDownLatch.await();
             }
+            THREAD_LOCAL.set(1);
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -116,7 +128,11 @@ public class ZkDistributedLock implements Lock {
     @Override
     public void unlock() {
         try {
-            zooKeeper.delete(currentNodePath, -1);
+            THREAD_LOCAL.set(THREAD_LOCAL.get() - 1);
+            if (THREAD_LOCAL.get() == 0) {
+                //删除znode节点的过程
+                zooKeeper.delete(currentNodePath, -1);
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
