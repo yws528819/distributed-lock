@@ -2,6 +2,8 @@ package com.yws.com.yws.service;
 
 import com.yws.com.yws.lock.DistributedLockClient;
 import com.yws.com.yws.lock.DistributedRedisLock;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.recipes.locks.InterProcessMutex;
 import org.redisson.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -31,8 +33,41 @@ public class StockService {
     @Autowired
     private RedissonClient redisClient;
 
+    @Autowired
+    private CuratorFramework curatorFramework;
+
 
     public void deduct() {
+        InterProcessMutex mutex = new InterProcessMutex(curatorFramework, "/curator/locks");
+        try {
+            mutex.acquire();
+
+            //1.查询库存信息
+            String stock = redisTemplate.opsForValue().get("stock");
+
+            //2.判断库存是否充足
+            if (stock != null && stock.length() > 0) {
+                Integer st = Integer.valueOf(stock);
+                if (st > 0) {
+                    //3.扣减库存
+                    redisTemplate.opsForValue().set("stock", String.valueOf(--st));
+                }
+            }
+
+            //测试可重入
+            test(mutex);
+        }catch (Exception e) {
+            throw new RuntimeException(e);
+        }finally {
+            try {
+                mutex.release();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    public void deduct4() {
 
         RLock rLock = redisClient.getLock("lock");
         rLock.lock();
@@ -87,10 +122,16 @@ public class StockService {
     }
 
 
-    public void test() {
+    public void test(InterProcessMutex mutex) throws Exception {
+        mutex.acquire();
+        System.out.println("测试curator可重入锁。。。");
+        mutex.release();
+    }
+
+    public void test2() {
         DistributedRedisLock lock = lockClient.getRedisLock("lock");
         lock.lock();
-        System.out.println("测试可重入锁。。。");
+        System.out.println("测试redisson可重入锁。。。");
         lock.unlock();
     }
 
