@@ -54,4 +54,17 @@ public class StockController {
         stockService.coutDown();
         return "出来了一位同学";
     }
+
+
+    @GetMapping("/zk/readlock")
+    public String zkReadLock() {
+        stockService.zkReadLock();
+        return "zk read lock";
+    }
+
+    @GetMapping("/zk/writelock")
+    public String zkWriteLock() {
+        stockService.zkWriteLock();
+        return "zk write lock";
+    }
 }

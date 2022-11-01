@@ -6,6 +6,7 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.locks.InterProcessMutex;
 import com.yws.com.yws.lock.zk.ZkClient;
 import com.yws.com.yws.lock.zk.ZkDistributedLock;
+import org.apache.curator.framework.recipes.locks.InterProcessReadWriteLock;
 import org.redisson.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -365,5 +366,27 @@ public class StockService {
         // TODO: 一顿操作出门
         cdl.countDown();
 
+    }
+
+    public void zkReadLock() {
+        try {
+            InterProcessReadWriteLock readWriteLock = new InterProcessReadWriteLock(curatorFramework, "/curator/rwlock");
+            readWriteLock.readLock().acquire(10, TimeUnit.SECONDS);
+
+            //readWriteLock.readLock().release();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    public void zkWriteLock() {
+        try {
+            InterProcessReadWriteLock readWriteLock = new InterProcessReadWriteLock(curatorFramework, "/curator/rwlock");
+            readWriteLock.writeLock().acquire(10, TimeUnit.SECONDS);
+
+            //readWriteLock.writeLock().release();
+        }catch (Exception e){
+            e.printStackTrace();
+        }
     }
 }
