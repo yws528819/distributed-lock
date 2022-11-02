@@ -67,4 +67,16 @@ public class StockController {
         stockService.zkWriteLock();
         return "zk write lock";
     }
+
+    @GetMapping("/zk/semaphore")
+    public String zkSemaphore() {
+        stockService.semaphore2();
+        return "hello test curator semaphore";
+    }
+
+    @GetMapping("/zk/share/count")
+    public String zkShareCount() {
+        stockService.zkShareCount();
+        return "zk shareCount test";
+    }
 }

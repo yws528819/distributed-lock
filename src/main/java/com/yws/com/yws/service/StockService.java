@@ -7,6 +7,9 @@ import org.apache.curator.framework.recipes.locks.InterProcessMutex;
 import com.yws.com.yws.lock.zk.ZkClient;
 import com.yws.com.yws.lock.zk.ZkDistributedLock;
 import org.apache.curator.framework.recipes.locks.InterProcessReadWriteLock;
+import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreV2;
+import org.apache.curator.framework.recipes.locks.Lease;
+import org.apache.curator.framework.recipes.shared.SharedCount;
 import org.redisson.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -334,6 +337,20 @@ public class StockService {
         }
     }
 
+    public void semaphore2() {
+        InterProcessSemaphoreV2 semaphoreV2 = new InterProcessSemaphoreV2(curatorFramework, "/curator/semaphore", 5);
+
+        try {
+            Lease lease = semaphoreV2.acquire();//获取资源，获取资源成功的线程可以继续处理业务操作。否则会被阻塞
+            redisTemplate.opsForList().rightPush("log", "10086获取了资源，开始业务逻辑处理。" + Thread.currentThread().getName());
+            TimeUnit.SECONDS.sleep(10 + new Random().nextInt(10));
+            redisTemplate.opsForList().rightPush("log", "10086处理完业务逻辑，资源释放===========" + Thread.currentThread().getName());
+            semaphoreV2.returnLease(lease);//手动释放资源，后续请求线程就可以获取该资源
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public void semaphore() {
         RSemaphore semaphore = redisClient.getSemaphore("semaphore");
         semaphore.trySetPermits(3);//设置资源量 限流的线程数
@@ -386,6 +403,19 @@ public class StockService {
 
             //readWriteLock.writeLock().release();
         }catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    public void zkShareCount() {
+        try {
+            SharedCount sharedCount = new SharedCount(curatorFramework, "/curator/sharecount", 100);
+            sharedCount.start();
+            int count = sharedCount.getCount();
+            int random = new Random().nextInt(1000);
+            sharedCount.setCount(random);
+            System.out.println("共享计数器的初始值：" + count + "，现在我改成了：" + random);
+        }catch (Exception e) {
             e.printStackTrace();
         }
     }
